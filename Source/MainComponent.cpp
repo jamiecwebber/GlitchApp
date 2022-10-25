@@ -29,6 +29,12 @@ MainComponent::MainComponent()
     randomnessLabel.setText("Randomness", juce::dontSendNotification);
     randomnessLabel.attachToComponent(&randomnessSlider, true);
 
+    addAndMakeVisible(&spreadSlider);
+    spreadSlider.setRange(0.0, 1.0);
+    addAndMakeVisible(spreadLabel);
+    spreadLabel.setText("Spread", juce::dontSendNotification);
+    spreadLabel.attachToComponent(&spreadSlider, true);
+
     formatManager.registerBasicFormats();
 
     setSize (800, 600);
@@ -45,7 +51,7 @@ MainComponent::~MainComponent()
 //==============================================================================
 void MainComponent::prepareToPlay (int samplesPerBlockExpected, double sampleRate)
 {
-
+    outputBuffer.setSize(2, 0);
 }
 
 void MainComponent::getNextAudioBlock (const juce::AudioSourceChannelInfo& bufferToFill)
@@ -64,6 +70,7 @@ void MainComponent::getNextAudioBlock (const juce::AudioSourceChannelInfo& buffe
             auto samplesThisTime = juce::jmin(outputSamplesRemaining, bufferSamplesRemaining);
 
             bufferToFill.buffer->copyFrom(0, outputSamplesOffset, outputBuffer, 0, position, samplesThisTime);
+            bufferToFill.buffer->copyFrom(1, outputSamplesOffset, outputBuffer, 1, position, samplesThisTime);
 
             outputSamplesRemaining -= samplesThisTime;
             outputSamplesOffset += samplesThisTime;
@@ -97,6 +104,7 @@ void MainComponent::resized()
     numThreadsSlider.setBounds(area.removeFromTop(50).removeFromRight(getWidth()-100).reduced(5));
     delaySlider.setBounds(area.removeFromTop(50).removeFromRight(getWidth() - 100).reduced(5));
     randomnessSlider.setBounds(area.removeFromTop(50).removeFromRight(getWidth() - 100).reduced(5));
+    spreadSlider.setBounds(area.removeFromTop(50).removeFromRight(getWidth() - 100).reduced(5));
 }
 
 ////
@@ -105,15 +113,15 @@ void MainComponent::openButtonClicked()
 {
     chooser = std::make_unique<juce::FileChooser>("Select a Wave file to play...",
         juce::File{},
-        "*.wav");                     // [7]
+        "*.wav");                   
     auto chooserFlags = juce::FileBrowserComponent::openMode
         | juce::FileBrowserComponent::canSelectFiles;
 
-    chooser->launchAsync(chooserFlags, [this](const juce::FileChooser& fc)           // [8]
+    chooser->launchAsync(chooserFlags, [this](const juce::FileChooser& fc)           
         {
             auto file = fc.getResult();
 
-            if (file != juce::File{})                                                      // [9]
+            if (file != juce::File{})                                                     
             {
                 juce::ScopedPointer<juce::AudioFormatReader> reader = formatManager.createReaderFor(file);
 
@@ -132,13 +140,26 @@ void MainComponent::glitchGenerator(int threadsLeft)
     float delay = delaySlider.getValue();
     float randomness = randomnessSlider.getValue() * juce::Random::getSystemRandom().nextFloat();
 
+    juce::Random random{};
+    float spreadL = 1;
+    float spreadR = 1;
+    if (random.nextBool()) 
+    {
+        spreadL -= spreadSlider.getValue() * random.nextFloat();
+    }
+    else {
+        spreadR -= spreadSlider.getValue() * random.nextFloat();
+    }
+
     int delaySample = 44100 * (1 - randomness) * delay;
     std::thread newThread;
 
     for (int i = 0; i < bufferSize; ++i)
     {
+
         vectorMutex.lock();
-        outputVector.push_back(inputBuffer.getSample(0, i));
+        outputVectorL.push_back(inputBuffer.getSample(0, i) * spreadL);
+        outputVectorR.push_back(inputBuffer.getSample(1, i) * spreadR);
         vectorMutex.unlock();
 
         if (threadsLeft > 1 && i == delaySample)
@@ -154,7 +175,8 @@ void MainComponent::glitchGenerator(int threadsLeft)
 
 void MainComponent::glitchButtonClicked()
 {
-    outputVector.clear();
+    outputVectorL.clear();
+    outputVectorR.clear();
 
     int numThreads = numThreadsSlider.getValue();
 
@@ -162,9 +184,10 @@ void MainComponent::glitchButtonClicked()
 
     rootThread.join();
 
-    outputBuffer.setSize(2, outputVector.size());
+    outputBuffer.setSize(2, outputVectorL.size());
     for (int i = 0; i < outputBuffer.getNumSamples(); ++i) {
-        outputBuffer.setSample(0, i, outputVector.at(i));
+        outputBuffer.setSample(0, i, outputVectorL.at(i));
+        outputBuffer.setSample(1, i, outputVectorR.at(i));
     }
 
     playbackTrigger = true;

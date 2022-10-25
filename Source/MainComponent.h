@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include <thread>
+#include <iostream>
 
 
 //==============================================================================
@@ -42,16 +43,20 @@ private:
     std::unique_ptr<juce::FileChooser> chooser;
     juce::AudioFormatManager formatManager;
 
-    std::vector<std::thread*> threadVector;
-    std::vector<int> delayVector;
     juce::Slider numThreadsSlider;
     juce::Label numThreadsLabel;
+
     juce::Slider delaySlider;
     juce::Label delayLabel;
+
     juce::Slider randomnessSlider;
     juce::Label randomnessLabel;
 
-    std::vector<float> outputVector;
+    juce::Slider spreadSlider;
+    juce::Label spreadLabel;
+
+    std::vector<float> outputVectorL;
+    std::vector<float> outputVectorR;
     std::mutex vectorMutex;
     int delaySamples = 22050;
     bool playbackTrigger = false;
